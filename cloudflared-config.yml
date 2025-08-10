@@ -1,0 +1,7 @@
+tunnel: e00b68ad-aaac-4fa6-be5d-af54def58a21
+credentials-file: /home/y30n51k/.cloudflared/e00b68ad-aaac-4fa6-be5d-af54def58a21.json
+
+ingress:
+  - hostname: webhook.yeonsik.com
+    service: http://localhost:3000
+  - service: http_status:404

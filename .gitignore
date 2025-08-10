@@ -1,0 +1,40 @@
+# Node.js dependencies
+node_modules/
+
+# Log files
+logs/
+*.log
+tunnel.log
+
+# Environment variables
+.env
+.env.*
+
+# Temporary directories
+/tmp/
+pr-analysis-*/
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.backup
+*.backup-*
+
+# Claude webhook server specific
+claude-webhook-server/.env
+claude-webhook-server/logs/
+claude-webhook-server/node_modules/
