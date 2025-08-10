@@ -12,6 +12,129 @@ const path = require('path');
 
 const ReviewSkipChecker = require('./review-skip-checker');
 
+// 언어별 메시지 템플릿
+const LANGUAGE_TEMPLATES = {
+    english: {
+        startComment: {
+            title: '🤖 AI Review Started',
+            starting: '🔍 **Starting comprehensive code review for this PR...**',
+            processTitle: '### Review Process',
+            filesAnalyzed: '📂 **Files analyzed**',
+            agents: '🤖 **Agents**: 4 specialized reviewers running in parallel',
+            estimatedTime: '⏱️ **Estimated completion**: 3-5 minutes',
+            resultNote: '*Review results will be posted as a comment when all agents complete.*'
+        },
+        agents: {
+            'security-reviewer': '🛡️ Security Reviewer',
+            'architecture-reviewer': '🏗️ Architecture Reviewer',
+            'performance-reviewer': '⚡ Performance Reviewer', 
+            'ux-reviewer': '🎨 UX Reviewer'
+        },
+        promptInstruction: 'Please respond in English.'
+    },
+    korean: {
+        startComment: {
+            title: '🤖 AI 리뷰 시작됨',
+            starting: '🔍 **이 PR에 대한 종합적인 코드 리뷰를 시작합니다...**',
+            processTitle: '### 리뷰 프로세스',
+            filesAnalyzed: '📂 **분석된 파일**',
+            agents: '🤖 **에이전트**: 4개의 전문 리뷰어가 병렬로 실행됩니다',
+            estimatedTime: '⏱️ **예상 완료 시간**: 3-5분',
+            resultNote: '*모든 에이전트가 완료되면 리뷰 결과를 댓글로 게시합니다.*'
+        },
+        agents: {
+            'security-reviewer': '🛡️ 보안 리뷰어',
+            'architecture-reviewer': '🏗️ 아키텍처 리뷰어',
+            'performance-reviewer': '⚡ 성능 리뷰어',
+            'ux-reviewer': '🎨 UX 리뷰어'
+        },
+        promptInstruction: 'Please respond in Korean (한국어).'
+    },
+    japanese: {
+        startComment: {
+            title: '🤖 AIレビュー開始',
+            starting: '🔍 **このPRの包括的なコードレビューを開始します...**',
+            processTitle: '### レビュープロセス',
+            filesAnalyzed: '📂 **分析されたファイル**',
+            agents: '🤖 **エージェント**: 4つの専門レビュアーが並列実行されます',
+            estimatedTime: '⏱️ **予想完了時間**: 3-5分',
+            resultNote: '*すべてのエージェントが完了すると、レビュー結果をコメントで投稿します。*'
+        },
+        agents: {
+            'security-reviewer': '🛡️ セキュリティレビュアー',
+            'architecture-reviewer': '🏗️ アーキテクチャレビュアー',
+            'performance-reviewer': '⚡ パフォーマンスレビュアー',
+            'ux-reviewer': '🎨 UXレビュアー'
+        },
+        promptInstruction: 'Please respond in Japanese (日本語).'
+    },
+    chinese: {
+        startComment: {
+            title: '🤖 AI 代码审查已开始',
+            starting: '🔍 **正在开始对此PR进行全面的代码审查...**',
+            processTitle: '### 审查流程',
+            filesAnalyzed: '📂 **已分析的文件**',
+            agents: '🤖 **代理**: 4个专业审查员并行运行',
+            estimatedTime: '⏱️ **预计完成时间**: 3-5分钟',
+            resultNote: '*所有代理完成后，将发布审查结果作为评论。*'
+        },
+        agents: {
+            'security-reviewer': '🛡️ 安全审查员',
+            'architecture-reviewer': '🏗️ 架构审查员',
+            'performance-reviewer': '⚡ 性能审查员',
+            'ux-reviewer': '🎨 用户体验审查员'
+        },
+        promptInstruction: 'Please respond in Chinese (中文).'
+    },
+    spanish: {
+        startComment: {
+            title: '🤖 Revisión de IA Iniciada',
+            starting: '🔍 **Iniciando revisión integral de código para este PR...**',
+            processTitle: '### Proceso de Revisión',
+            filesAnalyzed: '📂 **Archivos analizados**',
+            agents: '🤖 **Agentes**: 4 revisores especializados ejecutándose en paralelo',
+            estimatedTime: '⏱️ **Tiempo estimado de finalización**: 3-5 minutos',
+            resultNote: '*Los resultados de la revisión se publicarán como comentario cuando todos los agentes completen.*'
+        },
+        agents: {
+            'security-reviewer': '🛡️ Revisor de Seguridad',
+            'architecture-reviewer': '🏗️ Revisor de Arquitectura',
+            'performance-reviewer': '⚡ Revisor de Rendimiento',
+            'ux-reviewer': '🎨 Revisor de UX'
+        },
+        promptInstruction: 'Please respond in Spanish (Español).'
+    },
+    french: {
+        startComment: {
+            title: '🤖 Révision IA Commencée',
+            starting: '🔍 **Démarrage de la révision complète du code pour cette PR...**',
+            processTitle: '### Processus de Révision',
+            filesAnalyzed: '📂 **Fichiers analysés**',
+            agents: '🤖 **Agents**: 4 réviseurs spécialisés s\'exécutant en parallèle',
+            estimatedTime: '⏱️ **Temps estimé d\'achèvement**: 3-5 minutes',
+            resultNote: '*Les résultats de la révision seront publiés en commentaire une fois tous les agents terminés.*'
+        },
+        agents: {
+            'security-reviewer': '🛡️ Réviseur de Sécurité',
+            'architecture-reviewer': '🏗️ Réviseur d\'Architecture',
+            'performance-reviewer': '⚡ Réviseur de Performance',
+            'ux-reviewer': '🎨 Réviseur UX'
+        },
+        promptInstruction: 'Please respond in French (Français).'
+    }
+};
+
+// 현재 설정된 언어 가져오기
+function getReviewLanguage() {
+    return process.env.AI_REVIEW_LANGUAGE || 'english';
+}
+
+// 언어별 템플릿 가져오기
+function getLanguageTemplate() {
+    const language = getReviewLanguage();
+    return LANGUAGE_TEMPLATES[language] || LANGUAGE_TEMPLATES.english;
+}
+
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -173,6 +296,8 @@ function generateAgentPrompt(agentName, prData, tempDir) {
         'ux-reviewer': '사용자 경험, 접근성, UI 일관성'
     };
     
+    const template = getLanguageTemplate();
+    
     const basePrompt = `@${agentName}, please perform a comprehensive review of this GitHub Pull Request.
 
 You are a specialized ${agentName} focusing on ${agentDescriptions[agentName]}.
@@ -195,6 +320,9 @@ ${tempDir}
 2. Provide detailed review from your expertise area (${agentDescriptions[agentName]})
 3. Identify issues and provide improvement suggestions
 4. Identify safe auto-fixable items
+
+## Language Instruction:
+${template.promptInstruction}
 
 ## Required Output Format:
 Please return your review results in the following JSON format enclosed in \`\`\`json blocks:
@@ -546,22 +674,23 @@ To force a review, add \`@claude-bot review\` in a comment.`;
             return;
         }
         
-        // 2. 리뷰 시작 댓글 추가
-        const startComment = `## 🤖 AI Review Started
+        // 2. 리뷰 시작 댓글 추가 (언어별 템플릿 사용)
+        const template = getLanguageTemplate();
+        const startComment = `## ${template.startComment.title}
 
-🔍 **Starting comprehensive code review for this PR...**
+${template.startComment.starting}
 
-### Review Process
-- 📂 **Files analyzed**: ${changedFiles.length} changed files
-- 🤖 **Agents**: 4 specialized reviewers running in parallel
-  - 🛡️ Security Reviewer
-  - 🏗️ Architecture Reviewer  
-  - ⚡ Performance Reviewer
-  - 🎨 UX Reviewer
+${template.startComment.processTitle}
+- ${template.startComment.filesAnalyzed}: ${changedFiles.length} changed files
+- ${template.startComment.agents}
+  - ${template.agents['security-reviewer']}
+  - ${template.agents['architecture-reviewer']}  
+  - ${template.agents['performance-reviewer']}
+  - ${template.agents['ux-reviewer']}
 
-⏱️ **Estimated completion**: 3-5 minutes
+${template.startComment.estimatedTime}
 
-*Review results will be posted as a comment when all agents complete.*`;
+${template.startComment.resultNote}`;
 
         const startCommentCommand = `gh pr comment ${prData.pr_number} --repo "${prData.repo}" --body "${startComment.replace(/"/g, '\\"')}"`;
         

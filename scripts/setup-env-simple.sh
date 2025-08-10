@@ -33,11 +33,12 @@ print_colored() {
 echo -e "${CYAN}🔧 GitHub Organization AI Review System 환경변수 설정${NC}"
 echo "============================================================="
 echo ""
-echo "이 스크립트는 필요한 4개 환경변수를 ~/.bashrc에 자동으로 추가합니다:"
+echo "이 스크립트는 필요한 5개 환경변수를 ~/.bashrc에 자동으로 추가합니다:"
 echo "  1. GITHUB_WEBHOOK_TOKEN - GitHub API 접근용 토큰"
 echo "  2. GITHUB_WEBHOOK_SECRET - 웹훅 보안용 비밀키"
 echo "  3. ORGANIZATION_NAME - GitHub Organization 이름"
 echo "  4. WEBHOOK_URL - Cloudflare Tunnel 웹훅 엔드포인트"
+echo "  5. AI_REVIEW_LANGUAGE - AI 리뷰 언어 설정 (기본값: english)"
 echo ""
 
 # 현재 상태 확인
@@ -48,6 +49,7 @@ GITHUB_WEBHOOK_TOKEN_SET=false
 WEBHOOK_SECRET_SET=false
 ORGANIZATION_SET=false
 WEBHOOK_URL_SET=false
+AI_REVIEW_LANGUAGE_SET=false
 
 if [ -n "$GITHUB_WEBHOOK_TOKEN" ]; then
     echo -e "✅ ${GREEN}GITHUB_WEBHOOK_TOKEN: 설정됨${NC}"
@@ -77,10 +79,17 @@ else
     echo -e "❌ ${RED}WEBHOOK_URL: 설정 필요${NC}"
 fi
 
+if [ -n "$AI_REVIEW_LANGUAGE" ]; then
+    echo -e "✅ ${GREEN}AI_REVIEW_LANGUAGE: 설정됨 ($AI_REVIEW_LANGUAGE)${NC}"
+    AI_REVIEW_LANGUAGE_SET=true
+else
+    echo -e "❌ ${RED}AI_REVIEW_LANGUAGE: 설정 필요 (기본값: english)${NC}"
+fi
+
 echo ""
 
 # 모든 환경변수가 설정된 경우
-if $GITHUB_WEBHOOK_TOKEN_SET && $WEBHOOK_SECRET_SET && $ORGANIZATION_SET && $WEBHOOK_URL_SET; then
+if $GITHUB_WEBHOOK_TOKEN_SET && $WEBHOOK_SECRET_SET && $ORGANIZATION_SET && $WEBHOOK_URL_SET && $AI_REVIEW_LANGUAGE_SET; then
     echo -e "${GREEN}🎉 모든 환경변수가 이미 설정되어 있습니다!${NC}"
     echo ""
     echo "현재 설정값:"
@@ -88,6 +97,7 @@ if $GITHUB_WEBHOOK_TOKEN_SET && $WEBHOOK_SECRET_SET && $ORGANIZATION_SET && $WEB
     echo "- Webhook Secret: ${GITHUB_WEBHOOK_SECRET:0:8}... (처음 8자리만 표시)"
     echo "- Organization: $ORGANIZATION_NAME"
     echo "- Webhook URL: $WEBHOOK_URL"
+    echo "- Review Language: $AI_REVIEW_LANGUAGE"
     echo ""
     read -p "환경변수를 다시 설정하시겠습니까? (y/N): " -n 1 -r
     echo ""
@@ -387,6 +397,125 @@ fi
 
 echo ""
 
+# AI Review Language 설정
+echo -e "${BLUE}5. AI Review Language (리뷰 언어)${NC}"
+echo "========================================="
+echo ""
+echo -e "${CYAN}📝 AI Review Language란?${NC}"
+echo "- AI가 코드 리뷰를 작성할 때 사용할 언어입니다"
+echo "- PR 댓글, 커밋 메시지 등이 이 언어로 작성됩니다"
+echo "- 기본값: english (영어)"
+echo ""
+echo -e "${YELLOW}💡 지원되는 언어:${NC}"
+echo "- english (영어) - 기본값"
+echo "- korean (한국어)"
+echo "- japanese (일본어)" 
+echo "- chinese (중국어)"
+echo "- spanish (스페인어)"
+echo "- french (프랑스어)"
+echo ""
+
+if ! $AI_REVIEW_LANGUAGE_SET; then
+    # 기본값 제안
+    DEFAULT_LANGUAGE="english"
+    echo -e "${CYAN}🌐 권장 기본값: $DEFAULT_LANGUAGE${NC}"
+    echo ""
+    
+    while true; do
+        read -p "AI Review Language을 입력하세요 (Enter시 기본값 사용, 예: korean, japanese): " review_language
+        
+        if [ -z "$review_language" ]; then
+            NEW_AI_REVIEW_LANGUAGE="$DEFAULT_LANGUAGE"
+            echo -e "${GREEN}✅ 기본 리뷰 언어(english)가 설정되었습니다${NC}"
+            break
+        else
+            # 입력값을 소문자로 변환
+            review_language=$(echo "$review_language" | tr '[:upper:]' '[:lower:]')
+            
+            # 지원되는 언어 목록
+            case "$review_language" in
+                "english"|"en"|"영어")
+                    NEW_AI_REVIEW_LANGUAGE="english"
+                    echo -e "${GREEN}✅ 리뷰 언어가 English로 설정되었습니다${NC}"
+                    break
+                    ;;
+                "korean"|"ko"|"kr"|"한국어"|"kor")
+                    NEW_AI_REVIEW_LANGUAGE="korean"
+                    echo -e "${GREEN}✅ 리뷰 언어가 Korean으로 설정되었습니다${NC}"
+                    break
+                    ;;
+                "japanese"|"jp"|"ja"|"일본어"|"jpn")
+                    NEW_AI_REVIEW_LANGUAGE="japanese"
+                    echo -e "${GREEN}✅ 리뷰 언어가 Japanese로 설정되었습니다${NC}"
+                    break
+                    ;;
+                "chinese"|"cn"|"zh"|"중국어"|"chn")
+                    NEW_AI_REVIEW_LANGUAGE="chinese"
+                    echo -e "${GREEN}✅ 리뷰 언어가 Chinese로 설정되었습니다${NC}"
+                    break
+                    ;;
+                "spanish"|"es"|"esp"|"스페인어")
+                    NEW_AI_REVIEW_LANGUAGE="spanish"
+                    echo -e "${GREEN}✅ 리뷰 언어가 Spanish로 설정되었습니다${NC}"
+                    break
+                    ;;
+                "french"|"fr"|"fra"|"프랑스어")
+                    NEW_AI_REVIEW_LANGUAGE="french"
+                    echo -e "${GREEN}✅ 리뷰 언어가 French로 설정되었습니다${NC}"
+                    break
+                    ;;
+                *)
+                    echo -e "${YELLOW}⚠️  '$review_language'는 지원되지 않는 언어입니다.${NC}"
+                    echo "지원되는 언어: english, korean, japanese, chinese, spanish, french"
+                    read -p "그래도 사용하시겠습니까? (y/N): " -n 1 -r
+                    echo ""
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        NEW_AI_REVIEW_LANGUAGE="$review_language"
+                        echo -e "${GREEN}✅ 커스텀 리뷰 언어($review_language)가 설정되었습니다${NC}"
+                        break
+                    else
+                        echo "다시 입력해주세요."
+                    fi
+                    ;;
+            esac
+        fi
+    done
+else
+    echo -e "${GREEN}현재 설정된 Review Language: $AI_REVIEW_LANGUAGE${NC}"
+    read -p "새로운 언어로 교체하시겠습니까? (y/N): " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        echo -e "${CYAN}🌐 새로운 언어를 선택하세요:${NC}"
+        echo "- english (영어) - 기본값"
+        echo "- korean (한국어)"
+        echo "- japanese (일본어)" 
+        echo "- chinese (중국어)"
+        echo ""
+        read -p "새로운 AI Review Language을 입력하세요: " review_language
+        
+        if [ -n "$review_language" ]; then
+            review_language=$(echo "$review_language" | tr '[:upper:]' '[:lower:]')
+            case "$review_language" in
+                "english"|"en") NEW_AI_REVIEW_LANGUAGE="english" ;;
+                "korean"|"ko"|"kr"|"한국어") NEW_AI_REVIEW_LANGUAGE="korean" ;;
+                "japanese"|"jp"|"ja"|"일본어") NEW_AI_REVIEW_LANGUAGE="japanese" ;;
+                "chinese"|"cn"|"zh"|"중국어") NEW_AI_REVIEW_LANGUAGE="chinese" ;;
+                "spanish"|"es") NEW_AI_REVIEW_LANGUAGE="spanish" ;;
+                "french"|"fr") NEW_AI_REVIEW_LANGUAGE="french" ;;
+                *) NEW_AI_REVIEW_LANGUAGE="$review_language" ;;
+            esac
+            echo -e "${GREEN}✅ AI Review Language가 업데이트되었습니다: $NEW_AI_REVIEW_LANGUAGE${NC}"
+        else
+            NEW_AI_REVIEW_LANGUAGE="$AI_REVIEW_LANGUAGE"
+        fi
+    else
+        NEW_AI_REVIEW_LANGUAGE="$AI_REVIEW_LANGUAGE"
+    fi
+fi
+
+echo ""
+
 # 설정 요약 및 확인
 echo -e "${CYAN}📋 설정 요약${NC}"
 echo "============"
@@ -421,6 +550,13 @@ else
     echo "- Webhook URL: 설정 안함"
 fi
 
+if [ -n "$NEW_AI_REVIEW_LANGUAGE" ]; then
+    echo "- Review Language: $NEW_AI_REVIEW_LANGUAGE (설정됨)"
+    HAS_UPDATES=true
+else
+    echo "- Review Language: 설정 안함 (기본값: english)"
+fi
+
 echo ""
 
 if ! $HAS_UPDATES; then
@@ -452,6 +588,7 @@ sed -i '/export GITHUB_WEBHOOK_TOKEN=/d' ~/.bashrc
 sed -i '/export GITHUB_WEBHOOK_SECRET=/d' ~/.bashrc
 sed -i '/export ORGANIZATION_NAME=/d' ~/.bashrc
 sed -i '/export WEBHOOK_URL=/d' ~/.bashrc
+sed -i '/export AI_REVIEW_LANGUAGE=/d' ~/.bashrc
 
 # 새로운 환경변수 추가
 echo "" >> ~/.bashrc
@@ -471,6 +608,10 @@ fi
 
 if [ -n "$NEW_WEBHOOK_URL" ]; then
     echo "export WEBHOOK_URL=\"$NEW_WEBHOOK_URL\"" >> ~/.bashrc
+fi
+
+if [ -n "$NEW_AI_REVIEW_LANGUAGE" ]; then
+    echo "export AI_REVIEW_LANGUAGE=\"$NEW_AI_REVIEW_LANGUAGE\"" >> ~/.bashrc
 fi
 
 echo ""
@@ -526,6 +667,12 @@ if [ -n "$WEBHOOK_URL" ]; then
     echo -e "✅ ${GREEN}WEBHOOK_URL: 적용됨 ($WEBHOOK_URL)${NC}"
 else
     echo -e "❌ ${RED}WEBHOOK_URL: 적용 안됨${NC}"
+fi
+
+if [ -n "$AI_REVIEW_LANGUAGE" ]; then
+    echo -e "✅ ${GREEN}AI_REVIEW_LANGUAGE: 적용됨 ($AI_REVIEW_LANGUAGE)${NC}"
+else
+    echo -e "❌ ${RED}AI_REVIEW_LANGUAGE: 적용 안됨${NC}"
 fi
 
 echo ""
