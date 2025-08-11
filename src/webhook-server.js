@@ -709,25 +709,37 @@ function generateReviewComment(reviewSummary, autoFixResults) {
 
 `;
 
-    // 중요한 이슈만 간단히 표시 (상위 3개)
-    if (highIssues > 0 || mediumIssues > 0) {
-        comment += `### 🚨 주요 발견사항\n\n`;
+    // 모든 이슈를 컴팩트하게 표시
+    if (reviewSummary.consolidated_issues.length > 0) {
+        comment += `### 🔍 발견된 이슈 (총 ${reviewSummary.consolidated_issues.length}개)\n\n`;
         
+        // High/Medium 이슈는 상세히
         const criticalIssues = reviewSummary.consolidated_issues
             .filter(i => i.severity === 'high' || i.severity === 'medium')
             .sort((a, b) => {
                 const severityOrder = { 'high': 3, 'medium': 2, 'low': 1 };
                 return severityOrder[b.severity] - severityOrder[a.severity];
-            })
-            .slice(0, 3);
+            });
             
-        criticalIssues.forEach((issue, index) => {
-            const severity = issue.severity === 'high' ? '🔴' : '🟡';
-            comment += `${index + 1}. ${severity} \`${issue.file}\` - ${issue.description}\n`;
-            if (issue.suggestion) {
-                comment += `   💡 ${issue.suggestion}\n`;
-            }
-        });
+        if (criticalIssues.length > 0) {
+            comment += `**🚨 중요 이슈:**\n`;
+            criticalIssues.forEach((issue, index) => {
+                const severity = issue.severity === 'high' ? '🔴' : '🟡';
+                comment += `${index + 1}. ${severity} \`${issue.file}\` - ${issue.description}\n`;
+                if (issue.suggestion) {
+                    comment += `   💡 ${issue.suggestion}\n`;
+                }
+            });
+            comment += `\n`;
+        }
+        
+        // Low 이슈는 간단히 파일명만
+        const lowIssues = reviewSummary.consolidated_issues.filter(i => i.severity === 'low');
+        if (lowIssues.length > 0) {
+            comment += `**📝 개선사항 (${lowIssues.length}개):** `;
+            const fileList = [...new Set(lowIssues.map(i => i.file))].join(', ');
+            comment += `\`${fileList}\`\n\n`;
+        }
     }
     
     // 핵심 권장사항만 (최대 2개)
@@ -738,9 +750,20 @@ function generateReviewComment(reviewSummary, autoFixResults) {
         });
     }
     
-    // 낮은 이슈가 있을 때만 간단히 표시
-    if (lowIssues > 0 && highIssues === 0 && mediumIssues === 0) {
-        comment += `\n✅ **전반적으로 양호합니다.** ${lowIssues}개의 사소한 개선사항이 있습니다.\n`;
+    // 자동 수정 내용 표시
+    if (autoFixResults.applied > 0) {
+        comment += `\n### 🔧 자동 수정 적용됨\n`;
+        comment += `**${autoFixResults.applied}개 수정사항이 이 PR에 자동으로 적용되었습니다.**\n`;
+        comment += `새로운 커밋을 확인하여 변경사항을 검토해주세요.\n`;
+    }
+    
+    // 전체적인 상태 메시지
+    if (highIssues === 0 && mediumIssues === 0) {
+        comment += `\n✅ **전반적으로 양호한 코드입니다!**`;
+        if (lowIssues > 0) {
+            comment += ` (${lowIssues}개 개선사항 포함)`;
+        }
+        comment += `\n`;
     }
     
     // 실패한 에이전트가 있을 때만 표시
