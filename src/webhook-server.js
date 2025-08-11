@@ -224,8 +224,8 @@ async function getChangedFiles(prData) {
 
 // SubAgent 실행 함수 (@ 멘션 방식)
 async function runSubAgent(agentName, prData, tempDir) {
-    return new Promise((resolve, reject) => {
-        const agentPrompt = generateAgentPrompt(agentName, prData, tempDir);
+    return new Promise(async (resolve, reject) => {
+        const agentPrompt = await generateAgentPrompt(agentName, prData, tempDir);
         
         // @ 멘션 방식으로 SubAgent 호출
         const command = `cd "${tempDir}" && echo '${agentPrompt.replace(/'/g, "'\\''")}' | claude`;
@@ -287,8 +287,65 @@ async function runSubAgent(agentName, prData, tempDir) {
     });
 }
 
+// 프로젝트 컨텍스트 수집
+async function getProjectContext(repoDir) {
+    let context = '';
+    
+    try {
+        // README 파일 읽기
+        const readmeFiles = ['README.md', 'README.txt', 'README.rst', 'readme.md'];
+        for (const readme of readmeFiles) {
+            try {
+                const readmePath = path.join(repoDir, readme);
+                const readmeContent = await fs.readFile(readmePath, 'utf-8');
+                context += `### ${readme}:\n${readmeContent.substring(0, 2000)}${readmeContent.length > 2000 ? '...(truncated)' : ''}\n\n`;
+                break;
+            } catch (err) {
+                // README 파일이 없으면 다음 파일 시도
+            }
+        }
+        
+        // package.json 또는 기타 설정 파일 읽기
+        const configFiles = ['package.json', 'pubspec.yaml', 'build.gradle', 'pom.xml', 'Cargo.toml', 'requirements.txt'];
+        for (const configFile of configFiles) {
+            try {
+                const configPath = path.join(repoDir, configFile);
+                const configContent = await fs.readFile(configPath, 'utf-8');
+                context += `### ${configFile}:\n${configContent.substring(0, 1000)}${configContent.length > 1000 ? '...(truncated)' : ''}\n\n`;
+            } catch (err) {
+                // 파일이 없으면 무시
+            }
+        }
+        
+        // 프로젝트 구조 요약
+        try {
+            const projectStructure = await new Promise((resolve, reject) => {
+                exec(`find "${repoDir}" -type f -name "*.dart" -o -name "*.js" -o -name "*.ts" -o -name "*.py" -o -name "*.java" | head -20 | sed 's|${repoDir}/||'`, 
+                     (error, stdout) => {
+                    if (error) {
+                        resolve('Unable to analyze project structure');
+                    } else {
+                        resolve(stdout.trim());
+                    }
+                });
+            });
+            
+            if (projectStructure && projectStructure !== 'Unable to analyze project structure') {
+                context += `### Project Structure (key files):\n${projectStructure}\n\n`;
+            }
+        } catch (err) {
+            // 무시
+        }
+        
+    } catch (error) {
+        context += `Error gathering project context: ${error.message}\n`;
+    }
+    
+    return context.trim() || 'No additional project context available';
+}
+
 // SubAgent용 프롬프트 생성 (@ 멘션 포함)
-function generateAgentPrompt(agentName, prData, tempDir) {
+async function generateAgentPrompt(agentName, prData, tempDir) {
     const agentDescriptions = {
         'security-reviewer': '보안 취약점, 인증 메커니즘, 데이터 보호',
         'architecture-reviewer': '시스템 설계 패턴, 코드 구조, 확장성',
@@ -315,50 +372,49 @@ ${prData.body || 'No description provided'}
 ## Working Directory:
 ${tempDir}
 
+## Project Context:
+${await getProjectContext(tempDir)}
+
 ## Changed Files (focus your review on these files only):
 ${prData.changedFiles ? prData.changedFiles.map(f => `- ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})`).join('\\n') : 'Unable to fetch changed files'}
 
-## Your Tasks:
-1. Analyze the PR changes thoroughly
-2. Provide detailed review from your expertise area (${agentDescriptions[agentName]})
-3. Identify issues and provide improvement suggestions
-4. Identify safe auto-fixable items
-
-## Language Instruction:
-${template.promptInstruction}
+## Review Instructions:
+1. **Focus**: Review only the changed files listed above
+2. **Expertise**: Apply your specialized knowledge in ${agentDescriptions[agentName]}
+3. **Scope**: Identify critical issues and practical improvements
+4. **Language**: ${template.promptInstruction}
+5. **Format**: Keep findings concise and actionable
 
 ## Required Output Format:
-Please return your review results in the following JSON format enclosed in \`\`\`json blocks:
+Return compact JSON with essential findings only:
 
 \`\`\`json
 {
   "agent": "${agentName}",
   "pr_number": ${prData.pr_number},
-  "review_summary": "Brief summary of your review findings",
-  "issues_found": [
+  "review_summary": "1-sentence summary of key findings",
+  "critical_issues": [
     {
       "severity": "high/medium/low",
-      "category": "category name",
-      "description": "detailed issue description",
       "file": "file path",
-      "line": line_number,
-      "suggestion": "improvement suggestion",
+      "description": "Concise issue description",
+      "suggestion": "Brief fix suggestion",
       "auto_fixable": true/false
     }
   ],
-  "safe_auto_fixes": [
+  "auto_fixes": [
     {
-      "file": "file path",
-      "description": "fix description",
-      "changes": "specific changes to apply"
+      "file": "file path", 
+      "description": "What to fix",
+      "changes": "Specific change to make"
     }
   ],
-  "overall_score": 85,
-  "recommendations": ["list of recommendations"]
+  "score": 85,
+  "key_recommendations": ["Max 3 important recommendations"]
 }
 \`\`\`
 
-Please ensure the JSON is valid and complete.`;
+Keep responses focused and avoid redundant explanations.`;
 
     return basePrompt.trim();
 }
@@ -443,17 +499,17 @@ function consolidateReviews(agentResults) {
     let recommendations = [];
     
     successful.forEach(result => {
-        if (result.result?.issues_found) {
-            allIssues = allIssues.concat(result.result.issues_found);
+        if (result.result?.critical_issues) {
+            allIssues = allIssues.concat(result.result.critical_issues);
         }
-        if (result.result?.safe_auto_fixes) {
-            allAutoFixes = allAutoFixes.concat(result.result.safe_auto_fixes);
+        if (result.result?.auto_fixes) {
+            allAutoFixes = allAutoFixes.concat(result.result.auto_fixes);
         }
-        if (result.result?.overall_score) {
-            overallScore = Math.min(overallScore, result.result.overall_score);
+        if (result.result?.score) {
+            overallScore = Math.min(overallScore, result.result.score);
         }
-        if (result.result?.recommendations) {
-            recommendations = recommendations.concat(result.result.recommendations);
+        if (result.result?.key_recommendations) {
+            recommendations = recommendations.concat(result.result.key_recommendations);
         }
     });
     
@@ -642,65 +698,55 @@ Generated by Claude AI Review System"`;
 
 // 리뷰 댓글 생성
 function generateReviewComment(reviewSummary, autoFixResults) {
+    const template = getLanguageTemplate();
     const highIssues = reviewSummary.consolidated_issues.filter(i => i.severity === 'high').length;
     const mediumIssues = reviewSummary.consolidated_issues.filter(i => i.severity === 'medium').length;
     const lowIssues = reviewSummary.consolidated_issues.filter(i => i.severity === 'low').length;
     
-    let comment = `## 🤖 AI Code Review Summary
+    let comment = `## 🤖 ${template.startComment?.title || 'AI Code Review Complete'}
 
-**Overall Score:** ${reviewSummary.overall_score}/100
-
-### 📊 Review Statistics
-- **Agents Completed:** ${reviewSummary.successful_agents}/${reviewSummary.total_agents}
-- **Issues Found:** ${reviewSummary.consolidated_issues.length} total
-  - 🔴 High: ${highIssues}
-  - 🟡 Medium: ${mediumIssues}  
-  - 🟢 Low: ${lowIssues}
-- **Auto Fixes Applied:** ${autoFixResults.applied}
+**점수:** ${reviewSummary.overall_score}/100 | **에이전트:** ${reviewSummary.successful_agents}/${reviewSummary.total_agents} | **이슈:** ${reviewSummary.consolidated_issues.length}개 | **자동수정:** ${autoFixResults.applied}개
 
 `;
 
-    // 주요 이슈들 나열
-    if (reviewSummary.consolidated_issues.length > 0) {
-        comment += `### 🔍 Key Issues Found\n\n`;
+    // 중요한 이슈만 간단히 표시 (상위 3개)
+    if (highIssues > 0 || mediumIssues > 0) {
+        comment += `### 🚨 주요 발견사항\n\n`;
         
-        const topIssues = reviewSummary.consolidated_issues
+        const criticalIssues = reviewSummary.consolidated_issues
+            .filter(i => i.severity === 'high' || i.severity === 'medium')
             .sort((a, b) => {
                 const severityOrder = { 'high': 3, 'medium': 2, 'low': 1 };
                 return severityOrder[b.severity] - severityOrder[a.severity];
             })
-            .slice(0, 5);
+            .slice(0, 3);
             
-        topIssues.forEach((issue, index) => {
-            const severity = issue.severity === 'high' ? '🔴' : 
-                           issue.severity === 'medium' ? '🟡' : '🟢';
-            comment += `${index + 1}. ${severity} **${issue.category}** in \`${issue.file}\`\n`;
-            comment += `   ${issue.description}\n`;
+        criticalIssues.forEach((issue, index) => {
+            const severity = issue.severity === 'high' ? '🔴' : '🟡';
+            comment += `${index + 1}. ${severity} \`${issue.file}\` - ${issue.description}\n`;
             if (issue.suggestion) {
-                comment += `   💡 *Suggestion: ${issue.suggestion}*\n`;
+                comment += `   💡 ${issue.suggestion}\n`;
             }
-            comment += `\n`;
         });
     }
     
-    // 권장사항
+    // 핵심 권장사항만 (최대 2개)
     if (reviewSummary.recommendations.length > 0) {
-        comment += `### 💡 Recommendations\n\n`;
-        reviewSummary.recommendations.slice(0, 3).forEach((rec, index) => {
+        comment += `\n### ✅ 핵심 권장사항\n`;
+        reviewSummary.recommendations.slice(0, 2).forEach((rec, index) => {
             comment += `${index + 1}. ${rec}\n`;
         });
     }
     
-    // 에이전트 실패 정보
-    if (reviewSummary.failed_agents > 0) {
-        comment += `\n### ⚠️ Agent Failures\n`;
-        reviewSummary.failed_agent_details.forEach(failure => {
-            comment += `- **${failure.agent}:** ${failure.error}\n`;
-        });
+    // 낮은 이슈가 있을 때만 간단히 표시
+    if (lowIssues > 0 && highIssues === 0 && mediumIssues === 0) {
+        comment += `\n✅ **전반적으로 양호합니다.** ${lowIssues}개의 사소한 개선사항이 있습니다.\n`;
     }
     
-    comment += `\n---
-*Generated by Claude AI Review System at ${new Date().toISOString()}*`;
+    // 실패한 에이전트가 있을 때만 표시
+    if (reviewSummary.failed_agents > 0) {
+        comment += `\n⚠️ ${reviewSummary.failed_agents}개 에이전트 실행 실패\n`;
+    }
     
     return comment;
 }
