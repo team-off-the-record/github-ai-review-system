@@ -468,6 +468,12 @@ function consolidateReviews(agentResults) {
 
 // 안전한 자동 수정 적용
 async function applySafeAutoFixes(repoDir, autoFixes, prData) {
+    // 자동 수정 기능 비활성화 옵션 체크
+    if (process.env.DISABLE_AUTO_FIX === 'true') {
+        log('⚠️ Auto-fix is disabled by DISABLE_AUTO_FIX environment variable');
+        return { applied: 0, errors: [], disabled: true };
+    }
+    
     if (!autoFixes || autoFixes.length === 0) {
         log('No auto fixes to apply');
         return { applied: 0, errors: [] };
@@ -475,6 +481,21 @@ async function applySafeAutoFixes(repoDir, autoFixes, prData) {
     
     let applied = 0;
     const errors = [];
+    const backupDir = path.join(repoDir, '.ai-review-backups');
+    
+    // 백업 디렉토리 생성 (.gitignore에 추가되도록)
+    await fs.mkdir(backupDir, { recursive: true });
+    
+    // .gitignore에 백업 디렉토리 추가
+    const gitignorePath = path.join(repoDir, '.gitignore');
+    try {
+        const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8').catch(() => '');
+        if (!gitignoreContent.includes('.ai-review-backups')) {
+            await fs.appendFile(gitignorePath, '\n# AI Review System Backups\n.ai-review-backups/\n');
+        }
+    } catch (error) {
+        log(`⚠️ Could not update .gitignore: ${error.message}`);
+    }
     
     for (const fix of autoFixes) {
         try {
@@ -486,17 +507,25 @@ async function applySafeAutoFixes(repoDir, autoFixes, prData) {
                 continue;
             }
             
-            // 파일 백업
-            const backupPath = `${filePath}.backup.${Date.now()}`;
+            // 백업 파일을 별도 디렉토리에 저장
+            const backupFileName = `${path.basename(fix.file)}.backup.${Date.now()}`;
+            const backupPath = path.join(backupDir, backupFileName);
             await fs.copyFile(filePath, backupPath);
+            log(`📦 Backup created: ${backupFileName}`);
             
-            // 여기에 실제 수정 로직 구현 필요
-            // 현재는 로깅만 수행
-            log(`Would apply fix to ${fix.file}: ${fix.description}`);
-            applied++;
+            // TODO: 실제 수정 로직 구현
+            // 현재는 자동 수정을 실제로 적용하지 않음
+            // 향후 구현 시:
+            // 1. fix.changes 파싱
+            // 2. 파일 내용 수정
+            // 3. 수정된 내용 저장
+            
+            log(`⚠️ Auto-fix prepared but not applied (implementation pending): ${fix.file}`);
+            log(`   Description: ${fix.description}`);
+            // applied++; // 실제 구현 전까지는 카운트하지 않음
             
         } catch (error) {
-            errors.push(`Failed to fix ${fix.file}: ${error.message}`);
+            errors.push(`Failed to process ${fix.file}: ${error.message}`);
         }
     }
     
@@ -508,7 +537,8 @@ async function commitAndComment(repoDir, prData, reviewSummary, autoFixResults) 
     try {
         // 변경사항이 있으면 커밋
         if (autoFixResults.applied > 0) {
-            const commitCommand = `cd "${repoDir}" && git add . && git commit -m "🤖 Auto-fix: Applied ${autoFixResults.applied} safe fixes
+            // .gitignore 파일과 실제 수정된 파일만 추가 (백업 제외)
+            const commitCommand = `cd "${repoDir}" && git add --all -- ':!*.backup.*' ':!.ai-review-backups' && git commit -m "🤖 Auto-fix: Applied ${autoFixResults.applied} safe fixes
 
 AI Review Summary:
 - Overall Score: ${reviewSummary.overall_score}/100

@@ -514,6 +514,35 @@ else
     fi
 fi
 
+# 6. 자동 수정 기능 설정
+echo ""
+echo "6. 자동 수정 기능 설정"
+echo "==============================================="
+echo ""
+echo -e "${YELLOW}📝 자동 수정 기능이란?${NC}"
+echo "- AI 리뷰 시스템이 안전하다고 판단한 코드 수정사항을 자동으로 적용"
+echo "- 현재는 기능이 구현 중이므로 비활성화 권장"
+echo ""
+
+if [ -n "$DISABLE_AUTO_FIX" ]; then
+    echo "현재 설정: $DISABLE_AUTO_FIX"
+else
+    echo "현재 설정: 미설정 (자동 수정 활성화)"
+fi
+echo ""
+
+read -p "자동 수정을 비활성화하시겠습니까? (권장) [Y/n]: " disable_auto_fix_input
+
+if [[ "$disable_auto_fix_input" =~ ^[Yy]$ ]] || [ -z "$disable_auto_fix_input" ]; then
+    NEW_DISABLE_AUTO_FIX="true"
+    echo -e "${GREEN}✅ 자동 수정 비활성화 설정!${NC}"
+elif [[ "$disable_auto_fix_input" =~ ^[Nn]$ ]]; then
+    NEW_DISABLE_AUTO_FIX="false"
+    echo -e "${YELLOW}⚠️ 자동 수정 활성화 (실험적 기능)${NC}"
+else
+    echo -e "${YELLOW}⚠️ 현재 설정 유지${NC}"
+fi
+
 echo ""
 
 # 설정 요약 및 확인
@@ -557,6 +586,17 @@ else
     echo "- Review Language: 설정 안함 (기본값: english)"
 fi
 
+if [ -n "$NEW_DISABLE_AUTO_FIX" ]; then
+    if [ "$NEW_DISABLE_AUTO_FIX" = "true" ]; then
+        echo "- 자동 수정: 비활성화 (설정됨)"
+    else
+        echo "- 자동 수정: 활성화 (설정됨)"
+    fi
+    HAS_UPDATES=true
+else
+    echo "- 자동 수정: 설정 안함"
+fi
+
 echo ""
 
 if ! $HAS_UPDATES; then
@@ -589,6 +629,7 @@ sed -i '/export GITHUB_WEBHOOK_SECRET=/d' ~/.bashrc
 sed -i '/export ORGANIZATION_NAME=/d' ~/.bashrc
 sed -i '/export WEBHOOK_URL=/d' ~/.bashrc
 sed -i '/export AI_REVIEW_LANGUAGE=/d' ~/.bashrc
+sed -i '/export DISABLE_AUTO_FIX=/d' ~/.bashrc
 
 # 새로운 환경변수 추가
 echo "" >> ~/.bashrc
@@ -612,6 +653,10 @@ fi
 
 if [ -n "$NEW_AI_REVIEW_LANGUAGE" ]; then
     echo "export AI_REVIEW_LANGUAGE=\"$NEW_AI_REVIEW_LANGUAGE\"" >> ~/.bashrc
+fi
+
+if [ -n "$NEW_DISABLE_AUTO_FIX" ]; then
+    echo "export DISABLE_AUTO_FIX=\"$NEW_DISABLE_AUTO_FIX\"" >> ~/.bashrc
 fi
 
 echo ""
@@ -673,6 +718,12 @@ if [ -n "$AI_REVIEW_LANGUAGE" ]; then
     echo -e "✅ ${GREEN}AI_REVIEW_LANGUAGE: 적용됨 ($AI_REVIEW_LANGUAGE)${NC}"
 else
     echo -e "❌ ${RED}AI_REVIEW_LANGUAGE: 적용 안됨${NC}"
+fi
+
+if [ -n "$DISABLE_AUTO_FIX" ]; then
+    echo -e "✅ ${GREEN}DISABLE_AUTO_FIX: 적용됨 ($DISABLE_AUTO_FIX)${NC}"
+else
+    echo -e "ℹ️ ${BLUE}DISABLE_AUTO_FIX: 미설정 (자동 수정 활성화)${NC}"
 fi
 
 echo ""
