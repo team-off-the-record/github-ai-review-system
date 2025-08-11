@@ -33,12 +33,13 @@ print_colored() {
 echo -e "${CYAN}🔧 GitHub Organization AI Review System 환경변수 설정${NC}"
 echo "============================================================="
 echo ""
-echo "이 스크립트는 필요한 5개 환경변수를 ~/.bashrc에 자동으로 추가합니다:"
+echo "이 스크립트는 필요한 6개 환경변수를 ~/.bashrc에 자동으로 추가합니다:"
 echo "  1. GITHUB_WEBHOOK_TOKEN - GitHub API 접근용 토큰"
 echo "  2. GITHUB_WEBHOOK_SECRET - 웹훅 보안용 비밀키"
 echo "  3. ORGANIZATION_NAME - GitHub Organization 이름"
 echo "  4. WEBHOOK_URL - Cloudflare Tunnel 웹훅 엔드포인트"
 echo "  5. AI_REVIEW_LANGUAGE - AI 리뷰 언어 설정 (기본값: english)"
+echo "  6. ENABLE_AUTO_FIX - 자동 수정 활성화 (true/false, 기본값: true)"
 echo ""
 
 # 현재 상태 확인
@@ -521,24 +522,24 @@ echo "==============================================="
 echo ""
 echo -e "${YELLOW}📝 자동 수정 기능이란?${NC}"
 echo "- AI 리뷰 시스템이 안전하다고 판단한 코드 수정사항을 자동으로 적용"
-echo "- 현재는 기능이 구현 중이므로 비활성화 권장"
+echo "- 기본적으로 활성화되어 있습니다"
 echo ""
 
-if [ -n "$DISABLE_AUTO_FIX" ]; then
-    echo "현재 설정: $DISABLE_AUTO_FIX"
+if [ -n "$ENABLE_AUTO_FIX" ]; then
+    echo "현재 설정: $ENABLE_AUTO_FIX"
 else
-    echo "현재 설정: 미설정 (자동 수정 활성화)"
+    echo "현재 설정: 미설정 (기본값: true - 활성화)"
 fi
 echo ""
 
-read -p "자동 수정을 비활성화하시겠습니까? (권장) [Y/n]: " disable_auto_fix_input
+read -p "자동 수정을 활성화하시겠습니까? [Y/n]: " enable_auto_fix_input
 
-if [[ "$disable_auto_fix_input" =~ ^[Yy]$ ]] || [ -z "$disable_auto_fix_input" ]; then
-    NEW_DISABLE_AUTO_FIX="true"
-    echo -e "${GREEN}✅ 자동 수정 비활성화 설정!${NC}"
-elif [[ "$disable_auto_fix_input" =~ ^[Nn]$ ]]; then
-    NEW_DISABLE_AUTO_FIX="false"
-    echo -e "${YELLOW}⚠️ 자동 수정 활성화 (실험적 기능)${NC}"
+if [[ "$enable_auto_fix_input" =~ ^[Yy]$ ]] || [ -z "$enable_auto_fix_input" ]; then
+    NEW_ENABLE_AUTO_FIX="true"
+    echo -e "${GREEN}✅ 자동 수정 활성화 설정!${NC}"
+elif [[ "$enable_auto_fix_input" =~ ^[Nn]$ ]]; then
+    NEW_ENABLE_AUTO_FIX="false"
+    echo -e "${YELLOW}⚠️ 자동 수정 비활성화${NC}"
 else
     echo -e "${YELLOW}⚠️ 현재 설정 유지${NC}"
 fi
@@ -586,15 +587,15 @@ else
     echo "- Review Language: 설정 안함 (기본값: english)"
 fi
 
-if [ -n "$NEW_DISABLE_AUTO_FIX" ]; then
-    if [ "$NEW_DISABLE_AUTO_FIX" = "true" ]; then
-        echo "- 자동 수정: 비활성화 (설정됨)"
-    else
+if [ -n "$NEW_ENABLE_AUTO_FIX" ]; then
+    if [ "$NEW_ENABLE_AUTO_FIX" = "true" ]; then
         echo "- 자동 수정: 활성화 (설정됨)"
+    else
+        echo "- 자동 수정: 비활성화 (설정됨)"
     fi
     HAS_UPDATES=true
 else
-    echo "- 자동 수정: 설정 안함"
+    echo "- 자동 수정: 설정 안함 (기본값: 활성화)"
 fi
 
 echo ""
@@ -629,7 +630,7 @@ sed -i '/export GITHUB_WEBHOOK_SECRET=/d' ~/.bashrc
 sed -i '/export ORGANIZATION_NAME=/d' ~/.bashrc
 sed -i '/export WEBHOOK_URL=/d' ~/.bashrc
 sed -i '/export AI_REVIEW_LANGUAGE=/d' ~/.bashrc
-sed -i '/export DISABLE_AUTO_FIX=/d' ~/.bashrc
+sed -i '/export ENABLE_AUTO_FIX=/d' ~/.bashrc
 
 # 새로운 환경변수 추가
 echo "" >> ~/.bashrc
@@ -655,8 +656,8 @@ if [ -n "$NEW_AI_REVIEW_LANGUAGE" ]; then
     echo "export AI_REVIEW_LANGUAGE=\"$NEW_AI_REVIEW_LANGUAGE\"" >> ~/.bashrc
 fi
 
-if [ -n "$NEW_DISABLE_AUTO_FIX" ]; then
-    echo "export DISABLE_AUTO_FIX=\"$NEW_DISABLE_AUTO_FIX\"" >> ~/.bashrc
+if [ -n "$NEW_ENABLE_AUTO_FIX" ]; then
+    echo "export ENABLE_AUTO_FIX=\"$NEW_ENABLE_AUTO_FIX\"" >> ~/.bashrc
 fi
 
 echo ""
@@ -720,10 +721,10 @@ else
     echo -e "❌ ${RED}AI_REVIEW_LANGUAGE: 적용 안됨${NC}"
 fi
 
-if [ -n "$DISABLE_AUTO_FIX" ]; then
-    echo -e "✅ ${GREEN}DISABLE_AUTO_FIX: 적용됨 ($DISABLE_AUTO_FIX)${NC}"
+if [ -n "$ENABLE_AUTO_FIX" ]; then
+    echo -e "✅ ${GREEN}ENABLE_AUTO_FIX: 적용됨 ($ENABLE_AUTO_FIX)${NC}"
 else
-    echo -e "ℹ️ ${BLUE}DISABLE_AUTO_FIX: 미설정 (자동 수정 활성화)${NC}"
+    echo -e "ℹ️ ${BLUE}ENABLE_AUTO_FIX: 미설정 (기본값: true - 활성화)${NC}"
 fi
 
 echo ""

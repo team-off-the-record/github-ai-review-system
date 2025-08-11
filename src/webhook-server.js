@@ -471,9 +471,10 @@ function consolidateReviews(agentResults) {
 
 // 안전한 자동 수정 적용
 async function applySafeAutoFixes(repoDir, autoFixes, prData) {
-    // 자동 수정 기능 비활성화 옵션 체크
-    if (process.env.DISABLE_AUTO_FIX === 'true') {
-        log('⚠️ Auto-fix is disabled by DISABLE_AUTO_FIX environment variable');
+    // 자동 수정 기능 활성화 체크 (기본값: true)
+    const autoFixEnabled = process.env.ENABLE_AUTO_FIX !== 'false';
+    if (!autoFixEnabled) {
+        log('⚠️ Auto-fix is disabled by ENABLE_AUTO_FIX=false environment variable');
         return { applied: 0, errors: [], disabled: true };
     }
     
