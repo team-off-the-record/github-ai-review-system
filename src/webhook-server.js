@@ -833,20 +833,42 @@ async function handleCommentEvent(eventData) {
     if (comment.includes('@claude-bot') && comment.includes('review')) {
         log(`🎯 Manual review triggered for PR #${eventData.issue.number}`);
         
-        // PR 이벤트 데이터로 변환하여 처리
-        const mockPREvent = {
-            action: 'synchronize',
-            pull_request: {
-                ...eventData.issue,
-                head: { sha: 'latest' }, // 실제로는 API로 가져와야 함
-                base: { ref: 'main' },
-                user: { login: eventData.issue.user.login }
-            },
-            repository: eventData.repository,
-            organization: eventData.organization
-        };
-        
-        await handlePullRequestEvent(mockPREvent);
+        try {
+            // GitHub API로 실제 PR 정보 가져오기
+            const prNumber = eventData.issue.number;
+            const repo = eventData.repository.full_name;
+            
+            log(`📡 Fetching PR #${prNumber} details from ${repo}`);
+            
+            const prResponse = await new Promise((resolve, reject) => {
+                exec(`gh api repos/${repo}/pulls/${prNumber}`, (error, stdout, stderr) => {
+                    if (error) {
+                        reject(new Error(`Failed to fetch PR: ${error.message}`));
+                    } else {
+                        try {
+                            resolve(JSON.parse(stdout));
+                        } catch (parseError) {
+                            reject(new Error(`Failed to parse PR data: ${parseError.message}`));
+                        }
+                    }
+                });
+            });
+            
+            log(`✅ PR details fetched: ${prResponse.head.ref} -> ${prResponse.base.ref}`);
+            
+            // 실제 PR 이벤트 데이터로 변환하여 처리
+            const mockPREvent = {
+                action: 'synchronize',
+                pull_request: prResponse,
+                repository: eventData.repository,
+                organization: eventData.organization
+            };
+            
+            await handlePullRequestEvent(mockPREvent);
+            
+        } catch (error) {
+            log(`❌ Failed to process manual review: ${error.message}`);
+        }
     }
 }
 
