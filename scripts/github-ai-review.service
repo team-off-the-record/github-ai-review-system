@@ -1,0 +1,33 @@
+[Unit]
+Description=GitHub AI Review System
+Documentation=https://github.com/team-off-the-record/github-ai-review-system
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User=y30n51k
+WorkingDirectory=/home/y30n51k/github-ai-review-system
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node src/webhook-server.js
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=5
+
+# Security settings
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/home/y30n51k/github-ai-review-system
+PrivateTmp=true
+NoNewPrivileges=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=github-ai-review
+
+[Install]
+WantedBy=multi-user.target

@@ -315,6 +315,9 @@ ${prData.body || 'No description provided'}
 ## Working Directory:
 ${tempDir}
 
+## Changed Files (focus your review on these files only):
+${prData.changedFiles ? prData.changedFiles.map(f => `- ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})`).join('\\n') : 'Unable to fetch changed files'}
+
 ## Your Tasks:
 1. Analyze the PR changes thoroughly
 2. Provide detailed review from your expertise area (${agentDescriptions[agentName]})
@@ -481,21 +484,6 @@ async function applySafeAutoFixes(repoDir, autoFixes, prData) {
     
     let applied = 0;
     const errors = [];
-    const backupDir = path.join(repoDir, '.ai-review-backups');
-    
-    // 백업 디렉토리 생성 (.gitignore에 추가되도록)
-    await fs.mkdir(backupDir, { recursive: true });
-    
-    // .gitignore에 백업 디렉토리 추가
-    const gitignorePath = path.join(repoDir, '.gitignore');
-    try {
-        const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8').catch(() => '');
-        if (!gitignoreContent.includes('.ai-review-backups')) {
-            await fs.appendFile(gitignorePath, '\n# AI Review System Backups\n.ai-review-backups/\n');
-        }
-    } catch (error) {
-        log(`⚠️ Could not update .gitignore: ${error.message}`);
-    }
     
     for (const fix of autoFixes) {
         try {
@@ -507,38 +495,92 @@ async function applySafeAutoFixes(repoDir, autoFixes, prData) {
                 continue;
             }
             
-            // 백업 파일을 별도 디렉토리에 저장
-            const backupFileName = `${path.basename(fix.file)}.backup.${Date.now()}`;
-            const backupPath = path.join(backupDir, backupFileName);
-            await fs.copyFile(filePath, backupPath);
-            log(`📦 Backup created: ${backupFileName}`);
+            // 실제 자돐 수정 적용
+            let fileContent = await fs.readFile(filePath, 'utf-8');
+            const originalContent = fileContent;
             
-            // TODO: 실제 수정 로직 구현
-            // 현재는 자동 수정을 실제로 적용하지 않음
-            // 향후 구현 시:
-            // 1. fix.changes 파싱
-            // 2. 파일 내용 수정
-            // 3. 수정된 내용 저장
-            
-            log(`⚠️ Auto-fix prepared but not applied (implementation pending): ${fix.file}`);
-            log(`   Description: ${fix.description}`);
-            // applied++; // 실제 구현 전까지는 카운트하지 않음
+            // fix.changes를 바이트 수준으로 파싱하여 수정 적용
+            if (fix.changes && typeof fix.changes === 'string') {
+                // 간단한 예: "Replace 'old_text' with 'new_text'" 형태의 수정
+                const replaceMatch = fix.changes.match(/Replace ['"]([^'"]+)['"] with ['"]([^'"]+)['"]/i);
+                if (replaceMatch) {
+                    const [, oldText, newText] = replaceMatch;
+                    if (fileContent.includes(oldText)) {
+                        fileContent = fileContent.replace(oldText, newText);
+                        log(`⚙️ Applied replace fix: '${oldText}' -> '${newText}' in ${fix.file}`);
+                    } else {
+                        errors.push(`Text '${oldText}' not found in ${fix.file}`);
+                        continue;
+                    }
+                }
+                
+                // 다른 형태의 수정: "Add import statement" 등
+                else if (fix.changes.toLowerCase().includes('add import') && fix.changes.includes('import ')) {
+                    const importMatch = fix.changes.match(/import\s+[^;]+;?/i);
+                    if (importMatch) {
+                        const importStatement = importMatch[0].endsWith(';') ? importMatch[0] : importMatch[0] + ';';
+                        // 파일 맨 위에 import 추가
+                        fileContent = importStatement + '\n' + fileContent;
+                        log(`⚙️ Applied import fix: ${importStatement} in ${fix.file}`);
+                    }
+                }
+                
+                // 기본적인 수정: 지시된 대로 Claude Code로 수정 시도
+                else {
+                    log(`⚠️ Complex fix detected, using Claude Code for: ${fix.file}`);
+                    const claudeResult = await applyClaudeCodeFix(repoDir, fix);
+                    if (claudeResult.success) {
+                        applied++;
+                        log(`✅ Claude Code fix applied: ${fix.file}`);
+                        continue;
+                    } else {
+                        errors.push(`Claude Code fix failed for ${fix.file}: ${claudeResult.error}`);
+                        continue;
+                    }
+                }
+                
+                // 파일 내용이 변경되었으면 저장
+                if (fileContent !== originalContent) {
+                    await fs.writeFile(filePath, fileContent, 'utf-8');
+                    applied++;
+                    log(`✅ Successfully applied fix to ${fix.file}`);
+                } else {
+                    log(`⚠️ No changes made to ${fix.file}`);
+                }
+            } else {
+                log(`⚠️ Invalid fix format for ${fix.file}, skipping`);
+            }
             
         } catch (error) {
-            errors.push(`Failed to process ${fix.file}: ${error.message}`);
+            errors.push(`Failed to apply fix to ${fix.file}: ${error.message}`);
         }
     }
     
     return { applied, errors };
 }
 
+// Claude Code로 복잡한 수정 적용
+async function applyClaudeCodeFix(repoDir, fix) {
+    return new Promise((resolve) => {
+        const prompt = `Fix the following issue in ${fix.file}: ${fix.description}\n\nChanges needed: ${fix.changes}\n\nPlease apply the fix directly to the file.`;
+        const command = `cd "${repoDir}" && echo '${prompt.replace(/'/g, "'\''")})' | claude`;
+        
+        exec(command, { timeout: 60000 }, (error, stdout, stderr) => {
+            if (error) {
+                resolve({ success: false, error: error.message });
+            } else {
+                resolve({ success: true, output: stdout });
+            }
+        });
+    });
+}
+
 // GitHub에 커밋 및 댓글 등록
 async function commitAndComment(repoDir, prData, reviewSummary, autoFixResults) {
     try {
-        // 변경사항이 있으면 커밋
+        // 변경사항이 있으면 커밋 (백업 파일 없이)
         if (autoFixResults.applied > 0) {
-            // .gitignore 파일과 실제 수정된 파일만 추가 (백업 제외)
-            const commitCommand = `cd "${repoDir}" && git add --all -- ':!*.backup.*' ':!.ai-review-backups' && git commit -m "🤖 Auto-fix: Applied ${autoFixResults.applied} safe fixes
+            const commitCommand = `cd "${repoDir}" && git add -A && git commit -m "🤖 Auto-fix: Applied ${autoFixResults.applied} safe fixes
 
 AI Review Summary:
 - Overall Score: ${reviewSummary.overall_score}/100
@@ -743,7 +785,10 @@ ${template.startComment.resultNote}`;
         // 3. PR 분석 준비 (클론)
         tempDir = await preparePRAnalysis(prData);
         
-        // 4. 4개 SubAgent 병렬 실행
+        // 4. Changed files 정보를 prData에 추가
+        prData.changedFiles = changedFiles;
+        
+        // 5. 4개 SubAgent 병렬 실행
         const agentResults = await runAllSubAgents(prData, tempDir);
         
         // 4. 결과 통합
@@ -812,6 +857,20 @@ app.post('/webhook', async (req, res) => {
     
     // 즉시 로그 기록
     log(`📨 Webhook received: ${eventType}/${action} from ${eventData.organization?.login || 'unknown'}`);
+    
+    // AI 자동 수정 커밋인지 확인하여 무한 루프 방지 (PR 이벤트인 경우만)
+    if (eventType === 'pull_request' && eventData.pull_request) {
+        const lastCommitMessage = eventData.pull_request.head?.commit?.message || '';
+        if (lastCommitMessage.includes('🤖 Auto-fix:') || lastCommitMessage.includes('Generated with [Claude Code]')) {
+            log('🔄 Skipping review for AI auto-fix commit to prevent infinite loop');
+            res.status(200).json({ 
+                status: 'skipped', 
+                reason: 'AI auto-fix commit detected',
+                commit_message: lastCommitMessage.substring(0, 100) + '...'
+            });
+            return;
+        }
+    }
     
     // GitHub 시크릿 검증
     const signature = req.headers['x-hub-signature-256'];
